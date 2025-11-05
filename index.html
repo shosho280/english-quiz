@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>英単語クイズアプリ</title>
+<style>
+body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
+button { margin: 5px; padding: 10px 20px; font-size: 16px; color: black; }
+#question { font-size: 24px; margin: 20px 0; }
+#options button { display: block; width: 60%; margin: 5px auto; }
+#result, #explanation { font-size: 18px; margin-top: 15px; }
+.hidden { display: none; }
+</style>
+</head>
+<body>
+<h1>英単語クイズ</h1>
+
+<!-- ファイル読み込み -->
+<input type="file" id="csvFile" accept=".csv" /><br />
+
+<!-- 各種操作ボタン -->
+<button id="showRecords">記録を表示</button>
+<button id="resetStats">統計をリセット</button>
+<button id="deleteCSV">CSVデータ削除</button>
+<button id="exitQuiz">クイズを終了</button>
+
+<!-- クイズ表示領域 -->
+<div id="quizArea" class="hidden">
+  <div id="question"></div>
+  <div id="options"></div>
+  <div id="result"></div>
+  <div id="explanation"></div>
+  <button id="nextBtn" class="hidden">次へ</button>
+</div>
+
+<!-- 記録一覧 -->
+<div id="recordsArea" class="hidden">
+  <h3>記録一覧</h3>
+  <div id="records"></div>
+  <button id="closeRecords">閉じる</button>
+</div>
+
+<script>
+let words = [];
+let currentIndex = 0;
+let usedQuestions = [];
+let correctCounts = JSON.parse(localStorage.getItem("correctCounts")) || {};
+let wrongCounts = JSON.parse(localStorage.getItem("wrongCounts")) || {};
+
+// === ページ読み込み時に保存済みCSVデータを読み込む ===
+window.addEventListener("load", () => {
+  const savedCSV = localStorage.getItem("savedCSVData");
+  if (savedCSV) {
+    words = JSON.parse(savedCSV);
+    startQuiz();
+  }
+});
+
+// === CSVファイル読み込み ===
+document.getElementById("csvFile").addEventListener("change", function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    const lines = event.target.result.split("\n").map(l => l.trim()).filter(l => l);
+    words = lines.map(line => {
+      const [word, meaning, explanation] = line.split(",");
+      return { word, meaning, explanation };
+    });
+    localStorage.setItem("savedCSVData", JSON.stringify(words));
+    startQuiz();
+  };
+  reader.readAsText(file);
+});
+
+function startQuiz() {
+  document.getElementById("quizArea").classList.remove("hidden");
+  currentIndex = 0;
+  usedQuestions = [];
+  showQuestion();
+}
+
+function showQuestion() {
+  if (usedQuestions.length === words.length) {
+    alert("全ての問題が終了しました！");
+    return;
+  }
+
+  let qIndex;
+  do {
+    qIndex = Math.floor(Math.random() * words.length);
+  } while (usedQuestions.includes(qIndex));
+
+  usedQuestions.push(qIndex);
+  currentIndex = qIndex;
+  const questionObj = words[qIndex];
+
+  document.getElementById("question").textContent = `「${questionObj.word}」の意味は？`;
+  document.getElementById("result").textContent = "";
+  document.getElementById("explanation").textContent = "";
+  document.getElementById("nextBtn").classList.add("hidden");
+
+  const optionsDiv = document.getElementById("options");
+  optionsDiv.innerHTML = "";
+
+  const correctAnswer = questionObj.meaning;
+  const choices = [correctAnswer];
+
+  while (choices.length < 8 && words.length > choices.length) {
+    const randomChoice = words[Math.floor(Math.random() * words.length)].meaning;
+    if (!choices.includes(randomChoice)) choices.push(randomChoice);
+  }
+
+  choices.sort(() => Math.random() - 0.5);
+
+  choices.forEach(choice => {
+    const btn = document.createElement("button");
+    btn.textContent = choice;
+    btn.onclick = () => handleAnswer(btn, choice === correctAnswer);
+    optionsDiv.appendChild(btn);
+  });
+}
+
+function handleAnswer(button, isCorrect) {
+  const questionObj = words[currentIndex];
+  const allButtons = document.querySelectorAll("#options button");
+  allButtons.forEach(b => b.disabled = true);
+
+  if (isCorrect) {
+    button.style.backgroundColor = "lightgreen";
+    document.getElementById("result").textContent = "✅ 正解！";
+    correctCounts[questionObj.word] = (correctCounts[questionObj.word] || 0) + 1;
+  } else {
+    button.style.backgroundColor = "salmon";
+    document.getElementById("result").textContent = `❌ 不正解！（正解：${questionObj.meaning}）`;
+    wrongCounts[questionObj.word] = (wrongCounts[questionObj.word] || 0) + 1;
+  }
+
+  localStorage.setItem("correctCounts", JSON.stringify(correctCounts));
+  localStorage.setItem("wrongCounts", JSON.stringify(wrongCounts));
+
+  document.getElementById("explanation").innerHTML =
+    `<b>単語:</b> ${questionObj.word}<br>
+     <b>意味:</b> ${questionObj.meaning}<br>
+     <b>補足:</b> ${questionObj.explanation || "（なし）"}`;
+
+  document.getElementById("nextBtn").classList.remove("hidden");
+}
+
+document.getElementById("nextBtn").addEventListener("click", showQuestion);
+
+// === 記録一覧表示 ===
+document.getElementById("showRecords").addEventListener("click", () => {
+  const recordsArea = document.getElementById("recordsArea");
+  const recordsDiv = document.getElementById("records");
+  recordsArea.classList.remove("hidden");
+  recordsDiv.innerHTML = "<table border='1' style='margin:auto'><tr><th>単語</th><th>正解数</th><th>不正解数</th></tr></table>";
+
+  const table = recordsDiv.querySelector("table");
+  Object.keys(correctCounts).forEach(word => {
+    const correct = correctCounts[word] || 0;
+    const wrong = wrongCounts[word] || 0;
+    const row = document.createElement("tr");
+    row.innerHTML = `<td>${word}</td><td>${correct}</td><td>${wrong}</td>`;
+    table.appendChild(row);
+  });
+});
+
+document.getElementById("closeRecords").addEventListener("click", () => {
+  document.getElementById("recordsArea").classList.add("hidden");
+});
+
+// === 統計リセット ===
+document.getElementById("resetStats").addEventListener("click", () => {
+  if (confirm("統計をリセットしますか？")) {
+    localStorage.removeItem("correctCounts");
+    localStorage.removeItem("wrongCounts");
+    correctCounts = {};
+    wrongCounts = {};
+    alert("統計をリセットしました。");
+  }
+});
+
+// === CSVデータ削除 ===
+document.getElementById("deleteCSV").addEventListener("click", () => {
+  if (confirm("保存されたCSVデータを削除しますか？\n（再読み込み後にクイズは初期化されます）")) {
+    localStorage.removeItem("savedCSVData");
+    document.getElementById("quizArea").classList.add("hidden");
+    document.getElementById("csvFile").value = "";
+    alert("CSVデータを削除しました。再度CSVファイルを選択してください。");
+  }
+});
+
+// === 終了ボタン ===
+document.getElementById("exitQuiz").addEventListener("click", () => {
+  if (confirm("クイズを終了して閉じますか？")) {
+    document.body.innerHTML = "<h2>クイズを終了しました。</h2><p>タブを閉じてください。</p>";
+    window.close();
+  }
+});
+</script>
+</body>
+</html>
